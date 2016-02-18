@@ -24,7 +24,7 @@ class RESTClient(object):
     """
     Python client to interact with GLPI webservices plugin
     """
-    def __init__(self, baseurl="http://localhost/glpi"):
+    def __init__(self, baseurl="http://localhost/glpi",gcontext=None):
         """
         @param baseurl: Base URL of your GLPI instance
         @type baseurl: str
@@ -33,6 +33,8 @@ class RESTClient(object):
         self.resturl = self.baseurl + '/plugins/webservices/rest.php?'
         self.session = None
         self.logger = logging.getLogger()
+        self.help=False #disable additional unnecessary request
+        self.gcontext = gcontext
 
     def connect(self, login_name=None, login_password=None):
         """
@@ -53,7 +55,7 @@ class RESTClient(object):
                 'login_name': login_name,
                 'login_password': login_password,
             }
-            response = urllib2.urlopen(self.resturl + urllib.urlencode(params))
+            response = urllib2.urlopen(self.resturl + urllib.urlencode(params),context=self.gcontext)
             result = json.loads(response.read())
             if 'session' in result:
                 self.session = result['session']
@@ -64,7 +66,7 @@ class RESTClient(object):
         return True
 
     def __getattr__(self, attr):
-        def _get_doc(attr, _help):
+        def _get_doc(attr,_help):
             """
             Format docstring for wrapped method
             """
@@ -102,19 +104,24 @@ class RESTClient(object):
                             params['fields[%s][%s][%s]' % (glpi_type, elem_id, key)] = value
             return params
 
-        def call(module='glpi', *args, **kwargs):
+        def call( *args, **kwargs):
+            module='glpi'
             params = {'method': '.'.join([module, attr])}
             if self.session:
                 params['session'] = self.session
 
-            params = dict(params.items() + kwargs.items())
+            params = dict(params.items() + kwargs.items() )
+            if args :
+              if args[0] and isinstance(args[0], dict): #don't know why dict encapsulated as array
+                params = dict(params.items() + args[0].items() )
 
             if 'fields' in params:
                 params = treatFields(params)
 
-            response = urllib2.urlopen(self.resturl + urllib.urlencode(params))
+            response = urllib2.urlopen(self.resturl + urllib.urlencode(params,True),context=self.gcontext)
             return json.loads(response.read())
 
         call.__name__ = attr
-        call.__doc__ = _get_doc(attr, call(help=True))
+        if self.help : #disable additional unnecessary request
+          call.__doc__ = _get_doc(attr,call(help=True))
         return call
