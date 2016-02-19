@@ -16,7 +16,8 @@
 #  0. You just DO WHAT THE FUCK YOU WANT TO.
 
 
-import urllib, urllib2
+import urllib
+import urllib.request
 import json
 import logging
 
@@ -55,8 +56,8 @@ class RESTClient(object):
                 'login_name': login_name,
                 'login_password': login_password,
             }
-            response = urllib2.urlopen(self.resturl + urllib.urlencode(params),context=self.gcontext)
-            result = json.loads(response.read())
+            response = urllib.request.urlopen(self.resturl + urllib.parse.urlencode(params),context=self.gcontext)
+            result = json.loads(response.read().decode('utf8'))
             if 'session' in result:
                 self.session = result['session']
             else:
@@ -110,16 +111,18 @@ class RESTClient(object):
             if self.session:
                 params['session'] = self.session
 
-            params = dict(params.items() + kwargs.items() )
+            params.update(kwargs)
+            
+            
             if args :
               if args[0] and isinstance(args[0], dict): #don't know why dict encapsulated as array
-                params = dict(params.items() + args[0].items() )
+                params.update( args[0] )
 
-            if 'fields' in params:
+            if params and 'fields' in params:
                 params = treatFields(params)
-
-            response = urllib2.urlopen(self.resturl + urllib.urlencode(params,True),context=self.gcontext)
-            return json.loads(response.read())
+                
+            response = urllib.request.urlopen(self.resturl + urllib.parse.urlencode(params,True),context=self.gcontext)
+            return json.loads(response.read().decode('utf8'))
 
         call.__name__ = attr
         if self.help : #disable additional unnecessary request

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #-*- coding:utf-8 -*-
 
 #from subprocess import call
@@ -12,6 +12,10 @@ import fcntl, sys
 
 #HOST USER PASSWORD
 import myconfig
+
+#allow ctrl+c to terminate from console
+import signal
+signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 pid_file = '/run/lock/ticket_speech_sla.pid'
 fp = open(pid_file, 'w')
@@ -109,9 +113,9 @@ class SLA_class:
     #2 - glpi 164 - konstantinov 306 - muraviev 163 konev
     skip_users_id_lastupdater=[2,163,164,306]
     def __init__(self,host,user,password):
-	self.HOST=host
-	self.USER=user
-	self.PASSWORD=password
+      self.HOST=host
+      self.USER=user
+      self.PASSWORD=password
 
     def __setup_enviroment(self):
         #p = subprocess.Popen('DISPLAY=:0 dbus-launch', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -119,7 +123,7 @@ class SLA_class:
         #p = os.system("cat /home/denis/.dbus/session-bus/$(cat /var/lib/dbus/machine-id)-0")
         for var in p.stdout:
           #splog(var)
-          sp = var.split('=', 1)
+          sp = var.decode('utf8').split('=', 1)
           #splog(sp)
           os.environ[sp[0]] = sp[1][:-1]
         os.environ['XDG_RUNTIME_DIR'] = "/run/user/1000"
@@ -146,35 +150,36 @@ class SLA_class:
       
       while data and data[0] and ticket.data_date > ticket.day_start and ticket.data_date < ticket.day_end :
           if int(data[0]['status']) < 5 and ( force or last_check< ticket.data_date ) \
-            and not (int(data[0]['users_id_lastupdater']) in self.skip_users_id_lastupdater) \
-            and not (int(data[0]['id']) in self.new_tickets) :
+            and not (int(data[0]['users_id_lastupdater']) in self.skip_users_id_lastupdater) :
 
             ret_last_check=ticket.data_date
 
-            content=""
-            displayname=" НЕИЗВЕСТЕН "
-            
-            data2=self.glpi.getTicket(ticket=data[0]['id'])
-            #get followup user displayname and content
-            if data2 and data2['followups']:
-                content=data2['followups'][0]['content'].encode('utf-8').strip()
-                userdata=self.glpi.listUsers(user=int(data2['followups'][0]['users_id']))
-            else:
-                content=data[0]['content'].encode('utf-8').strip()
-                userdata=self.glpi.listUsers(user=int(data[0]['users']['requester'][0]['id']))
+            if not ( int(data[0]['id']) in self.new_tickets ):
+              content=""
+              displayname=" НЕИЗВЕСТЕН "
 
-            if userdata and userdata[0] :
-              displayname=userdata[0]['displayname'].encode('utf-8').strip()
+              data2=self.glpi.getTicket(ticket=data[0]['id'])
+              #get followup user displayname and content
+              if data2 and data2['followups']:
+                  content=data2['followups'][0]['content'].strip()
+                  userdata=self.glpi.listUsers(user=int(data2['followups'][0]['users_id']))
+              else:
+                  content=data[0]['content'].strip()
+                  userdata=self.glpi.listUsers(user=int(data[0]['users']['requester'][0]['id']))
 
+              if userdata and userdata[0] :
+                displayname=userdata[0]['displayname'].strip()
 
-            content=content[:content.find(" ",200)]
-            if force :
-              content=" НАПОМИНАЮ прочитайте заявку от пользователя "+displayname #+" "+content
-            else:
-              content="Обновление заявки номер "+str(data[0]['id'])+" от пользователя "+displayname+" "+content
+              content=content[:content.find(" ",200)]
               
-            #jdump(data)
-            self.say(content)
+              if force :
+                content=" НАПОМИНАЮ прочитайте заявку от пользователя "+displayname #+" "+content
+              else:
+                content="Обновление заявки номер "+str(data[0]['id'])+" от пользователя "+displayname+" "+content
+
+              print(content)  
+              #jdump(data)
+              self.say(content)
           
           data_old=data
           data = ticket.get_latest_ticket('date_mod');
@@ -200,12 +205,12 @@ class SLA_class:
           #splog(userdata)
           displayname=" НЕИЗВЕСТЕН "
           if userdata :
-            displayname=userdata[0]['displayname'].encode('utf-8').strip()
-          content=data[0]['content'].encode('utf-8').strip()
+            displayname=userdata[0]['displayname'].strip()
+          content=data[0]['content'].strip()
           content=content[:content.find(" ",200)]
           content="Новая заявка номер "+str(data[0]['id'])+" от пользователя "+displayname+" "+content
           self.say(content)
-          self.new_tickets.append(int(data[0]['id']))
+          self.new_tickets.append( int(data[0]['id']) )
           self.cfg.data['id']=max( int(self.cfg.data['id']), int(data[0]['id']))
           new_ticket_c += 1
         data = ticket.get_latest_ticket('date');
@@ -243,35 +248,37 @@ class SLA_class:
       return tcount
 
 
-m = SLA_class(HOST,USER,PASSWORD)
+m = SLA_class(myconfig.HOST,myconfig.USER,myconfig.PASSWORD)
 
 
 if '-G' in sys.argv : #gui mode
     import time
-    import gtk
-    import glib
+    import gi
+    gi.require_version('Gtk', '3.0')
+    from gi.repository import Gtk
+    from gi.repository import GLib
 
 
     def menu_run(A,B):
       timeout_cb_run()
 
-    icon=gtk.StatusIcon()
-    icon.set_from_icon_name(gtk.STOCK_YES)
-    menu = menu = gtk.Menu()
+    icon=Gtk.StatusIcon()
+    icon.set_from_icon_name(Gtk.STOCK_YES)
+    menu = menu = Gtk.Menu()
 
-    window_item = gtk.MenuItem("GLPI Refresh now")
+    window_item = Gtk.MenuItem("GLPI Refresh now")
     window_item.connect("activate", menu_run,"refresh now")
     menu.append(window_item)
 
-    text_item = gtk.MenuItem("")
+    text_item = Gtk.MenuItem("")
     menu.append(text_item)
     
-    quit_item = gtk.MenuItem("Quit")
-    quit_item.connect("activate", gtk.main_quit, "file.quit")
+    quit_item = Gtk.MenuItem("Quit")
+    quit_item.connect("activate", Gtk.main_quit, "file.quit")
     menu.append(quit_item)
     menu.show_all()
     def icon_clicked(status, button, time):
-        menu.popup(None, None, None, button, time)
+        menu.popup(None, None, None, None, button, time)
     icon.connect('popup-menu', icon_clicked)
     #icon.show()
     minutes_count=0
@@ -294,15 +301,15 @@ if '-G' in sys.argv : #gui mode
         def stop_blinking():
             icon.set_blinking(False)
             return False
-        glib.timeout_add_seconds(10,  stop_blinking)
+        GLib.timeout_add_seconds(10,  stop_blinking)
 
       minutes_count+=1
       text_item.set_label(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-      return True #glib.timeout continue 
+      return True #GLib.timeout continue 
 
     timeout_cb_run()
-    glib.timeout_add_seconds(60, timeout_cb_run)
-    gtk.main()
+    GLib.timeout_add_seconds(60, timeout_cb_run)
+    Gtk.main()
 
 elif  '-d' in sys.argv: #continuous run daemon mode
     while True:
